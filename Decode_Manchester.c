@@ -161,30 +161,46 @@ void setupPins(void)
 }
 
 void nullRegisters(){
-	  DCOCTL = 0x00;
-	  BCSCTL1 = 0x00;
-	  BCSCTL2 = 0x00;
-	  TA0CTL = TACLR;
+	DCOCTL = 0x00;
+	BCSCTL1 = 0x00;
+	BCSCTL2 = 0x00;
+	TA0CTL = TACLR;
+}
+
+void setupClock(){
+	  BCSCTL1 = CALBC1_8MHZ;					// Set DCO to 8MHz
+	  DCOCTL = CALDCO_8MHZ;						// Set DCP to 8MHz
+	  BCSCTL2 = SELM_0 | DIVM_0 | DIVS_2;		// Select DCO as MCLK; MCLK / 1 + SMCLK / 8
+
+	  for (i = 0xfffe; i > 0; i--);             // Delay for clock stabilization
+
+	  //IE1 |= OFIE;
+	  do
+	  {
+		  IFG1 &= ~OFIFG;
+		  for (i=0xFF; i>0; i--);
+	  }while( (IFG1 & OFIFG) != 0);
+	  //IE1 &= ~OFIE;
+
+	  TOGGLE_LED_FAST(green_LED);
+	  TOGGLE_LED_FAST(red_LED);
+	  DELAY(1000);
+	  TOGGLE_LED_FAST(green_LED);
+	  TOGGLE_LED_FAST(red_LED);
+
+
+	  TA0CTL = TASSEL_2 | ID_2 | MC_2;			// Enable capture timer /4 = 2uSecond
+	  TA0CCTL0 = CAP | CCIS1 | CM_3;
 }
 
 int main(void)
 {
   WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
-  for (i = 0; i < 0xfffe; i++);             // Delay for XTAL stabilization
 
   nullRegisters();
-  RESET();
-
-  BCSCTL1 = CALBC1_8MHZ;					// Set DCO to 8MHz
-  DCOCTL = CALDCO_8MHZ;						// Set DCP to 8MHz
-  BCSCTL2 = SELM_0 | DIVM_0 | DIVS_2;		// Select DCO as MCLK; MCLK / 1 + SMCLK / 8
-
-  TA0CTL = TASSEL_2 | ID_2 | MC_2;			// Enable capture timer /4 = 2uSecond
-  TA0CCTL0 = CAP | CCIS1 | CM_3;
-
-  DELAY(1000000);							//Wait for timer interrupt
-
   setupPins();
+  setupClock();
+  RESET();
 
   __bis_SR_register(GIE);       			// enable interrupts
 }
