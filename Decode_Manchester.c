@@ -151,8 +151,8 @@ void setupPins(void)
 	P1SEL = BIT4;                             // P1.4 SMCLK output
 
 	P2DIR = (0xFF & ~input_Pin);
-	P2REN = 0x00;
-	P2OUT = 0x00;
+	P2REN = 0x00 | input_Pin;
+	P2OUT = 0x00 | input_Pin;
 	P2IES = (LOW_to_HIGH & input_Pin);
 	P2IE = input_Pin;
 
@@ -174,20 +174,21 @@ void setupClock(){
 
 	  for (i = 0xfffe; i > 0; i--);             // Delay for clock stabilization
 
+	  TOGGLE_LED(red_LED);
+
 	  //IE1 |= OFIE;
+
 	  do
 	  {
 		  IFG1 &= ~OFIFG;
 		  for (i=0xFF; i>0; i--);
 	  }while( (IFG1 & OFIFG) != 0);
+
 	  //IE1 &= ~OFIE;
 
 	  TOGGLE_LED_FAST(green_LED);
-	  TOGGLE_LED_FAST(red_LED);
 	  DELAY(1000);
 	  TOGGLE_LED_FAST(green_LED);
-	  TOGGLE_LED_FAST(red_LED);
-
 
 	  TA0CTL = TASSEL_2 | ID_2 | MC_2;			// Enable capture timer /4 = 2uSecond
 	  TA0CCTL0 = CAP | CCIS1 | CM_3;
@@ -231,6 +232,7 @@ __interrupt void PORT2_ISR(void)
 
 	}
 	P2IES ^= input_Pin;								//Flip edge detect direction
+	P1OUT ^= BIT5;
 	TA0R = 0;
 
 	//Start Data Processing
