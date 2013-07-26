@@ -102,11 +102,11 @@ volatile unsigned char red_LED = BIT0;
 volatile unsigned char input_Pin = BIT1;
 volatile unsigned char bitpos_input_pin = 1;
 
-volatile unsigned int T2Max = 300; //T2 + Ttolerance;
-volatile unsigned int T2Min = 200; //T2 - Ttolerance;
+volatile unsigned int T2Max = 600; //T2 + Ttolerance;
+volatile unsigned int T2Min = 400; //T2 - Ttolerance;
 
-volatile unsigned int TMax = 200; //T + Ttolerance;
-volatile unsigned int TMin = 103; //T - Ttolerance;
+volatile unsigned int TMax = 400; //T + Ttolerance;
+volatile unsigned int TMin = 200; //T - Ttolerance;
 
 volatile uint32_t lastTagID = 0;
 
@@ -170,7 +170,7 @@ void nullRegisters(){
 void setupClock(){
 	  BCSCTL1 = CALBC1_8MHZ;					// Set DCO to 8MHz
 	  DCOCTL = CALDCO_8MHZ;						// Set DCP to 8MHz
-	  BCSCTL2 = SELM_0 | DIVM_0 | DIVS_2;		// Select DCO as MCLK; MCLK / 1 + SMCLK / 8
+	  BCSCTL2 = SELM_0 | DIVM_0 | DIVS_2;		// Select DCO as MCLK; MCLK / 1 + SMCLK / 4
 
 	  for (i = 0xfffe; i > 0; i--);             // Delay for clock stabilization
 
@@ -190,7 +190,7 @@ void setupClock(){
 	  DELAY(1000);
 	  TOGGLE_LED_FAST(green_LED);
 
-	  TA0CTL = TASSEL_2 | ID_2 | MC_2;			// Enable capture timer /4 = 2uSecond
+	  TA0CTL = TASSEL_2 | ID_1 | MC_2;			// Enable capture timer /4 = 2uSecond
 	  TA0CCTL0 = CAP | CCIS1 | CM_3;
 }
 
@@ -216,13 +216,13 @@ __interrupt void PORT2_ISR(void)
 		return;
 	}
 	TA0CCTL0 ^= CCIS0;						//Trigger time capture
-	P2IFG &= ~input_Pin;								//Clear edge interrupt
+	P2IFG &= ~input_Pin;					//Clear edge interrupt
 
 	//Start Timer
 	if(!isSyncing)
 	{
 		isSyncing = True;
-		TA0R = 0x00;									// Set TimerCoutner 0
+		TA0R = 0x00;						// Set TimerCoutner 0
 		return;
 	}
 
