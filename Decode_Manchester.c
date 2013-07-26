@@ -79,8 +79,8 @@
 #define False 0x00;
 #define True 0x01;
 
-#define LOW_to_HIGH 0x00;
-#define HIGH_to_LOW 0x02;
+#define LOW_to_HIGH (0x0000)
+#define HIGH_to_LOW (0x00FF)
 
 volatile unsigned int i;
 
@@ -97,10 +97,11 @@ volatile unsigned int inBuffer[50];
 volatile unsigned char expectShortEdge;
 volatile unsigned char receivedHeader;
 
-volatile unsigned int T = 128;	//Half Bit Rate
-volatile unsigned int T2 = 256;  //Bit Rate = 0.000256 = 512 useconds 125kHz / 32
+volatile unsigned char green_LED = BIT6;
+volatile unsigned char red_LED = BIT0;
+volatile unsigned char input_Pin = BIT1;
+volatile unsigned char bitpos_input_pin = 1;
 
-//volatile unsigned char Ttolerance = 1;
 volatile unsigned int T2Max = 300; //T2 + Ttolerance;
 volatile unsigned int T2Min = 200; //T2 - Ttolerance;
 
@@ -125,19 +126,63 @@ volatile uint16_t headerBits = 0; //Header 9 bits 1 == header done
 		P1OUT &= ~BIT6; \
 } \
 
-inline void startSync(void);
-void setupPins(void);
+#define DELAY(delay){ \
+		__delay_cycles(delay); \
+}\
+
+#define TOGGLE_LED(led){ \
+		P1OUT ^= led; \
+		DELAY(4000000); \
+		P1OUT ^= led; \
+		DELAY(4000000); \
+}\
+
+#define TOGGLE_LED_FAST(led){ \
+		P1OUT ^= led; \
+		DELAY(1000000); \
+		P1OUT ^= led; \
+		DELAY(1000000); \
+}\
+
+void setupPins(void)
+{
+	P1DIR = 0xFF;                             // P1.0,4 output
+	P1OUT = 0x00;                             // Clear P1 output latches
+	P1SEL = BIT4;                             // P1.4 SMCLK output
+
+	P2DIR = (0xFF & ~input_Pin);
+	P2REN = 0x00;
+	P2OUT = 0x00;
+	P2IES = (LOW_to_HIGH & input_Pin);
+	P2IE = input_Pin;
+
+	P3DIR = 0xFF;
+	P3OUT = 0x00;
+}
+
+void nullRegisters(){
+	  DCOCTL = 0x00;
+	  BCSCTL1 = 0x00;
+	  BCSCTL2 = 0x00;
+	  TA0CTL = TACLR;
+}
 
 int main(void)
 {
   WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
-  //for (i = 0; i < 0xfffe; i++);             // Delay for XTAL stabilization
+  for (i = 0; i < 0xfffe; i++);             // Delay for XTAL stabilization
 
+  nullRegisters();
   RESET();
-  BCSCTL1 = CALBC1_16MHZ;					// Set DCO to 16MHz
-  DCOCTL = CALDCO_16MHZ;					// Set DCP to 16MHz
 
-  BCSCTL2 = SELM_0 + DIVM_0 + DIVS_3;		// Select DCO as MCLK; MCLK / 1 + SMCLK / 8
+  BCSCTL1 = CALBC1_8MHZ;					// Set DCO to 8MHz
+  DCOCTL = CALDCO_8MHZ;						// Set DCP to 8MHz
+  BCSCTL2 = SELM_0 | DIVM_0 | DIVS_2;		// Select DCO as MCLK; MCLK / 1 + SMCLK / 8
+
+  TA0CTL = TASSEL_2 | ID_2 | MC_2;			// Enable capture timer /4 = 2uSecond
+  TA0CCTL0 = CAP | CCIS1 | CM_3;
+
+  DELAY(1000000);							//Wait for timer interrupt
 
   setupPins();
 
@@ -148,16 +193,19 @@ int main(void)
 #pragma vector=PORT2_VECTOR
 __interrupt void PORT2_ISR(void)
 {
+	//Early escape if wrong pin interrupt
+	if((P2IFG & input_Pin) == 0){
+		P2IFG = 0;
+		return;
+	}
 	TA0CCTL0 ^= CCIS0;						//Trigger time capture
-	P2IFG &= ~BIT1;								//Clear edge interrupt
+	P2IFG &= ~input_Pin;								//Clear edge interrupt
 
 	//Start Timer
 	if(!isSyncing)
 	{
 		isSyncing = True;
-		TA0CTL |= TASSEL_2 | ID_2 | MC_2 | TACLR;			// Enable capture timer /4 = 2uSecond
-		TA0R = 0;									// Set TimerCoutner 0
-		TA0CCTL0 = CAP + /*SCS*/ + CCIS1 + CM_3;
+		TA0R = 0x00;									// Set TimerCoutner 0
 		return;
 	}
 
@@ -166,15 +214,15 @@ __interrupt void PORT2_ISR(void)
 		return;
 
 	}
-	P2IES ^= BIT1;								//Flip edge detect direction
+	P2IES ^= input_Pin;								//Flip edge detect direction
 	TA0R = 0;
-	//P1OUT ^= 0x01;                            // Toggle P1.0
 
 	//Start Data Processing
 	if(!isSynced){
 		if (T2Min < TA0CCR0 && TA0CCR0 < T2Max){
 			isSynced = True;
-			currentBit = (P2IN >> 1) & 0x01;
+			//currentBit = (P2IN >> bitpos_input_pin) & 0x01;
+			currentBit = (P2IES & input_Pin) >> bitpos_input_pin;
 			return;
 		}
 	}
@@ -233,34 +281,17 @@ __interrupt void PORT2_ISR(void)
 			}
 
 		}else{
-//			P1OUT = 0x01;
-			if(! (lastTagID == 0 | lastTagID == 1 )){
-				if(lastTagID == 285708){
-					P1OUT = BIT6;
+			if(! (lastTagID == 0 || lastTagID == 1 )){
+				if(lastTagID == 285708 || lastTagID == 16282433){
+					TOGGLE_LED(green_LED);
 				}else{
-					P1OUT = BIT0;
+					TOGGLE_LED(red_LED);
 				}
-				__delay_cycles(20000000);
 			}else{
 				P1OUT = BIT0;
-				__delay_cycles(20000000);
 			}
 			RESET();
 			return;
 		}
 	}
-}
-
-void setupPins(void)
-{
-	P2DIR = 0x0;
-	P2REN = 0x0;
-	P2IES = LOW_to_HIGH;
-	//P2OUT = 0;
-	P2IE = BIT1;
-
-	P1OUT = 0x00;                             // Clear P1 output latches
-	P1SEL = 0x10;                             // P1.4 SMCLK output
-	P1DIR = BIT0 | BIT6;                             // P1.0,4 output
-
 }
